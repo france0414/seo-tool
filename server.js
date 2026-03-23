@@ -13,10 +13,13 @@ app.use(cors());
 app.use(express.json());
 
 // 靜態檔案路徑：指向 frontend 打包後的 dist 資料夾
-const distPath = path.join(__dirname, 'frontend', 'dist');
-if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
-}
+const distPath = path.resolve(__dirname, 'frontend', 'dist');
+
+app.use(cors());
+app.use(express.json());
+
+// 優先服務靜態檔案
+app.use(express.static(distPath));
 
 /**
  * [New] 智能偵測接口
@@ -104,10 +107,16 @@ function buildSummary(results) {
   return { avgScore: avg, totalIssues: Object.values(counts).reduce((a,b)=>a+b,0), categoryCounts: counts };
 }
 
-// 支援所有路由回傳 index.html (React 路由)
-if (fs.existsSync(path.join(distPath, 'index.html'))) {
-  app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
-}
+// 支援所有路由回傳 index.html (React 路由)，確保直接訪問 / 時能抓到網頁
+app.get('*', (req, res) => {
+  const indexPath = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(404).send('前端網頁還在編譯中或路徑錯誤，請稍候再試。');
+  }
+});
 
 app.listen(PORT, () => console.log(`🚀 SEO 工具伺服器運作中：Port ${PORT}`));
+
 
