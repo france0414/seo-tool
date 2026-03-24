@@ -12,13 +12,34 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// 靜態檔案路徑：指向 frontend 打包後的 dist 資料夾
-const distPath = path.resolve(__dirname, 'frontend', 'dist');
+// 靜態檔案路徑：多重候選路徑搜尋 (解決雲端環境路徑差異)
+const distCandidates = [
+  path.resolve(__dirname, 'frontend', 'dist'),
+  path.resolve(__dirname, 'dist'),
+  path.resolve(process.cwd(), 'frontend', 'dist'),
+  path.resolve(process.cwd(), 'dist')
+];
+
+let distPath = distCandidates[0];
+let found = false;
+for (const cand of distCandidates) {
+  if (fs.existsSync(path.join(cand, 'index.html'))) {
+    distPath = cand;
+    found = true;
+    console.log(`✅ 找到有效的靜態網頁路徑：${distPath}`);
+    break;
+  }
+}
+
+if (!found) {
+  console.warn('⚠️ 警告：找不到前端靜態檔案 (index.html)。');
+  console.warn('嘗試過的路徑：', distCandidates);
+}
 
 app.use(cors());
 app.use(express.json());
 
-// 優先服務靜態檔案
+// 服務靜態檔案
 app.use(express.static(distPath));
 
 /**
@@ -107,16 +128,18 @@ function buildSummary(results) {
   return { avgScore: avg, totalIssues: Object.values(counts).reduce((a,b)=>a+b,0), categoryCounts: counts };
 }
 
-// 支援所有路由回傳 index.html (React 路由)，確保直接訪問 / 時能抓到網頁
+// 支援所有路由回傳 index.html (React 路由)
 app.get('*', (req, res) => {
   const indexPath = path.join(distPath, 'index.html');
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
-    res.status(404).send('前端網頁還在編譯中或路徑錯誤，請稍候再試。');
+    // 萬一還是找不到，列出搜尋路徑給環境除錯用
+    res.status(404).send(`前端檔案定位失敗。<br>嘗試過的路徑：<pre>${distCandidates.join('\n')}</pre>`);
   }
 });
 
 app.listen(PORT, () => console.log(`🚀 SEO 工具伺服器運作中：Port ${PORT}`));
+
 
 
