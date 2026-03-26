@@ -74,7 +74,7 @@ app.post('/api/crawl', async (req, res) => {
   try {
     const { url, mode = 'all', customPrefix, fontSizeThreshold = 18, maxPages = 200 } = req.body;
     if (!url) return res.status(400).json({ error: '請提供網址' });
-    const pageLimit = Math.min(500, Math.max(1, maxPages)); // 上限 500 頁
+    const pageLimit = Math.min(1000, Math.max(1, maxPages)); // 上限 1000 頁
 
     const origin = new URL(url).origin;
     const allLinks = new Set();
@@ -92,7 +92,7 @@ app.post('/api/crawl', async (req, res) => {
     // === 第二步：自動深入掃描（無固定層數限制）===
     // 適用於 /shop、/blog 等多層分類結構
     // 持續探索直到找不到新的分類頁為止
-    const MAX_DISCOVERY_PAGES = Math.min(50, Math.ceil(pageLimit / 2)); // 最多拜訪的分類頁數量上限
+    const MAX_DISCOVERY_PAGES = Math.min(100, Math.ceil(pageLimit / 2)); // 最多拜訪的分類頁數量上限
     let discoveryRound = 0;
 
     while (visitedForDiscovery.size < MAX_DISCOVERY_PAGES) {
@@ -108,7 +108,7 @@ app.post('/api/crawl', async (req, res) => {
           // 產品頁通常以 -數字 結尾，排除掉
           const isProductDetail = /\-\d+$/.test(p);
           return isCategory || isListingPage || (!isProductDetail && discoveryRound === 1);
-        } catch(e) { return false; }
+        } catch (e) { return false; }
       });
 
       if (candidates.length === 0) break;
@@ -178,9 +178,9 @@ app.post('/api/crawl', async (req, res) => {
 });
 
 async function fetchPage(url) {
-  const response = await axios.get(url, { 
-    timeout: 15000, 
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' } 
+  const response = await axios.get(url, {
+    timeout: 15000,
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
   });
   return response.data;
 }
@@ -189,7 +189,7 @@ function buildSummary(results) {
   const succ = results.filter(r => r.success);
   const counts = { heading: 0, seo: 0, b2b: 0, style: 0, fontTag: 0 };
   for (const r of succ) if (r.categories) for (const k of Object.keys(counts)) counts[k] += r.categories[k]?.count || 0;
-  return { totalIssues: Object.values(counts).reduce((a,b)=>a+b,0), categoryCounts: counts };
+  return { totalIssues: Object.values(counts).reduce((a, b) => a + b, 0), categoryCounts: counts };
 }
 
 // 支援所有路由回傳 index.html (React 路由)
@@ -203,7 +203,7 @@ app.get('*', (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`🚀 SEO 工具伺服器運作中：Port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 SEO 工具伺服器運作中：Port ${PORT} (0.0.0.0)`));
 
 
 
