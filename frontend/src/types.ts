@@ -1,14 +1,15 @@
 export interface Issue {
   type: string;
-  severity: 'high' | 'medium' | 'low';
+  severity: 'high' | 'medium' | 'low' | 'critical';
   section: string;
-  isSystem?: boolean; // 新增：是否為系統結構
+  isSystem?: boolean;
   message: string;
   suggestion: string;
   tag: string;
   text: string;
   code: string;
-  deduction: number;
+  category?: string;
+  details?: any[];
 }
 
 export interface Category {
@@ -22,7 +23,6 @@ export interface Category {
 export interface ScanResult {
   success: boolean;
   url: string;
-  score: number;
   totalIssues: number;
   categories: Record<string, Category>;
   sections: {
@@ -38,9 +38,14 @@ export interface CrawlResult {
   mode: string;
   totalPages: number;
   summary: {
-    avgScore: number;
     totalIssues: number;
     categoryCounts: Record<string, number>;
+  };
+  commonIssues?: {
+    headerFooter: {
+      label: string;
+      issues: (Issue & { category?: string })[];
+    };
   };
   pages: ScanResult[];
   error?: string;

@@ -63,7 +63,7 @@ app.post('/api/scan', async (req, res) => {
     const { url, fontSizeThreshold = 18 } = req.body;
     if (!url) return res.status(400).json({ error: '請提供網址' });
     const html = await fetchPage(url);
-    const result = analyzeHTML(html, { fontSizeThreshold });
+    const result = analyzeHTML(html, { fontSizeThreshold, pageUrl: url });
     res.json({ success: true, url, ...result });
   } catch (err) {
     res.status(500).json({ error: `掃描失敗: ${err.message}` });
@@ -72,41 +72,106 @@ app.post('/api/scan', async (req, res) => {
 
 app.post('/api/crawl', async (req, res) => {
   try {
-    const { url, mode = 'all', customPrefix, fontSizeThreshold = 18 } = req.body;
+    const { url, mode = 'all', customPrefix, fontSizeThreshold = 18, maxPages = 200 } = req.body;
     if (!url) return res.status(400).json({ error: '請提供網址' });
+    const pageLimit = Math.min(500, Math.max(1, maxPages)); // 上限 500 頁
 
+    const origin = new URL(url).origin;
+    const allLinks = new Set();
+    const visitedForDiscovery = new Set(); // 已經拜訪過用來「發現更多連結」的頁面
+
+    // === 第一步：從起始頁取得初始連結 ===
     const homeHtml = await fetchPage(url);
     const $ = cheerio.load(homeHtml);
-    let links = extractLinks($, url, mode, customPrefix);
-    
-    // Odoo 自動深入邏輯
-    if (!customPrefix && mode === 'product' && links.length === 0) {
-      const catLinks = [];
-      $('a[href*="/shop/category/"]').each((i, el) => {
-        const h = $(el).attr('href');
-        try { catLinks.push(new URL(h, url).href); } catch(e) {}
+    const initialLinks = extractLinks($, url, mode, customPrefix);
+    initialLinks.forEach(l => allLinks.add(l));
+    allLinks.add(url);
+    visitedForDiscovery.add(url);
+    console.log(`📄 初始頁面找到 ${initialLinks.length} 個連結`);
+
+    // === 第二步：自動深入掃描（無固定層數限制）===
+    // 適用於 /shop、/blog 等多層分類結構
+    // 持續探索直到找不到新的分類頁為止
+    const MAX_DISCOVERY_PAGES = Math.min(50, Math.ceil(pageLimit / 2)); // 最多拜訪的分類頁數量上限
+    let discoveryRound = 0;
+
+    while (visitedForDiscovery.size < MAX_DISCOVERY_PAGES) {
+      discoveryRound++;
+      // 從目前已知的連結中，找出還沒拜訪過的「可能是分類/列表頁」的連結
+      const candidates = Array.from(allLinks).filter(link => {
+        if (visitedForDiscovery.has(link)) return false;
+        try {
+          const p = new URL(link).pathname;
+          // 分類頁特徵：含有 category、或是 /shop/、/blog/ 列表頁
+          const isCategory = /\/category\//i.test(p);
+          const isListingPage = /^\/(shop|blog)\/?$/i.test(p);
+          // 產品頁通常以 -數字 結尾，排除掉
+          const isProductDetail = /\-\d+$/.test(p);
+          return isCategory || isListingPage || (!isProductDetail && discoveryRound === 1);
+        } catch(e) { return false; }
       });
-      if (catLinks.length > 0) {
-        const firstCatHtml = await fetchPage(catLinks[0]);
-        links = extractLinks(cheerio.load(firstCatHtml), catLinks[0], mode);
+
+      if (candidates.length === 0) break;
+
+      const remaining = MAX_DISCOVERY_PAGES - visitedForDiscovery.size;
+      if (remaining <= 0) break;
+      const toVisit = candidates.slice(0, remaining);
+
+      console.log(`🔍 第 ${discoveryRound} 輪探索：拜訪 ${toVisit.length} 個分類頁...`);
+
+      const batchSize = 3;
+      for (let i = 0; i < toVisit.length; i += batchSize) {
+        const batch = toVisit.slice(i, i + batchSize);
+        const results = await Promise.allSettled(batch.map(u => fetchPage(u)));
+        for (let j = 0; j < results.length; j++) {
+          visitedForDiscovery.add(batch[j]);
+          if (results[j].status === 'fulfilled') {
+            const newLinks = extractLinks(cheerio.load(results[j].value), batch[j], mode, customPrefix);
+            newLinks.forEach(l => allLinks.add(l));
+          }
+        }
       }
+      console.log(`   → 目前共發現 ${allLinks.size} 個連結`);
     }
 
-    links = Array.from(new Set([url, ...links])).slice(0, 30);
+    // === 第三步：對所有發現的連結進行 SEO 審計 ===
+    const finalLinks = [url, ...Array.from(allLinks).filter(l => l !== url)].slice(0, pageLimit);
+    console.log(`✅ 最終將審計 ${finalLinks.length} 個頁面 (上限 ${pageLimit})`);
 
     const results = [];
+    let commonIssues = null; // Header/Footer 共用問題只取一次
     const batchSize = 3;
-    for (let i = 0; i < links.length; i += batchSize) {
-      const batchResults = await Promise.allSettled(links.slice(i, i + batchSize).map(async (p) => {
+    for (let i = 0; i < finalLinks.length; i += batchSize) {
+      const batchResults = await Promise.allSettled(finalLinks.slice(i, i + batchSize).map(async (p, batchIdx) => {
         const h = await fetchPage(p);
-        return { url: p, ...analyzeHTML(h, { fontSizeThreshold }), success: true };
+        const isFirstPage = (i + batchIdx === 0);
+        return { url: p, ...analyzeHTML(h, { fontSizeThreshold, skipHeaderFooter: !isFirstPage, pageUrl: p }), success: true, isFirstPage };
       }));
       for (const r of batchResults) {
-        if (r.status === 'fulfilled') results.push(r.value);
-        else results.push({ url: '未知故障', success: false });
+        if (r.status === 'fulfilled') {
+          const pageResult = r.value;
+          // 從第一頁提取 Header/Footer 共用問題
+          if (pageResult.isFirstPage && !commonIssues) {
+            commonIssues = { headerFooter: { label: '🔒 Header / Footer 共用問題 (僅顯示一次)', issues: [] } };
+            for (const catKey of Object.keys(pageResult.categories)) {
+              const cat = pageResult.categories[catKey];
+              const hfIssues = cat.issues.filter(iss => iss.section === 'Header' || iss.section === 'Footer');
+              const contentIssues = cat.issues.filter(iss => iss.section !== 'Header' && iss.section !== 'Footer');
+              // 把 HF issues 收到 commonIssues
+              hfIssues.forEach(iss => commonIssues.headerFooter.issues.push({ ...iss, category: cat.label }));
+              // 只保留 Content issues 在 page result
+              cat.issues = contentIssues;
+              cat.count = contentIssues.length;
+            }
+          }
+          delete pageResult.isFirstPage;
+          results.push(pageResult);
+        } else {
+          results.push({ url: '未知故障', success: false });
+        }
       }
     }
-    res.json({ success: true, mode, summary: buildSummary(results), pages: results });
+    res.json({ success: true, mode, summary: buildSummary(results), commonIssues, pages: results });
   } catch (err) {
     res.status(500).json({ error: `爬蟲失敗: ${err.message}` });
   }
@@ -122,10 +187,9 @@ async function fetchPage(url) {
 
 function buildSummary(results) {
   const succ = results.filter(r => r.success);
-  const avg = succ.length > 0 ? Math.round(succ.reduce((s, r) => s + r.score, 0) / succ.length) : 0;
   const counts = { heading: 0, seo: 0, b2b: 0, style: 0, fontTag: 0 };
   for (const r of succ) if (r.categories) for (const k of Object.keys(counts)) counts[k] += r.categories[k]?.count || 0;
-  return { avgScore: avg, totalIssues: Object.values(counts).reduce((a,b)=>a+b,0), categoryCounts: counts };
+  return { totalIssues: Object.values(counts).reduce((a,b)=>a+b,0), categoryCounts: counts };
 }
 
 // 支援所有路由回傳 index.html (React 路由)

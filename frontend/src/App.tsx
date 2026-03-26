@@ -7,12 +7,13 @@ const BASE_MODES: { key: ScanMode; icon: string; label: string; desc: string }[]
   { key: 'all', icon: '♾️', label: '全站掃描', desc: '包含所有連結' },
 ];
 
-const SEVERITY_MAP: Record<string, string> = { high: '嚴重', medium: '中等', low: '輕微' };
+const SEVERITY_MAP: Record<string, string> = { critical: '嚴重', high: '嚴重', medium: '中等', low: '輕微' };
 
 function App() {
   const [url, setUrl] = useState('');
   const [mode, setMode] = useState<ScanMode>('single');
   const [threshold, setThreshold] = useState(18);
+  const [maxPages, setMaxPages] = useState(200);
   const [loading, setLoading] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [discoveredModes, setDiscoveredModes] = useState<DiscoveredMode[]>([]);
@@ -23,6 +24,12 @@ function App() {
   
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set(['seo', 'b2b', 'style', 'fontTag']));
   const [expandedPages, setExpandedPages] = useState<Set<number>>(new Set());
+  const [perPage, setPerPage] = useState(10);
+  const [currentPage, setCurrentPage] = useState(0);
+
+  // 分頁計算
+  const totalPages = crawlResult ? Math.ceil(crawlResult.pages.length / perPage) : 0;
+  const paginatedPages = crawlResult ? crawlResult.pages.slice(currentPage * perPage, (currentPage + 1) * perPage) : [];
 
   const handleDiscover = async () => {
     if (!url.trim()) return;
@@ -49,7 +56,8 @@ function App() {
         url: url.trim(), 
         mode: isCustomLink ? 'custom' : mode, 
         customPrefix: isCustomLink ? selected?.prefix : undefined,
-        fontSizeThreshold: threshold 
+        fontSizeThreshold: threshold,
+        maxPages
       };
       
       const res = await fetch(ep, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -78,21 +86,37 @@ function App() {
           </h3>
           {!isCollapsed && (
             <div className="issues-container">
-              {cat.description && <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>{cat.description}</p>}
+              {cat.description && <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '8px' }}>{cat.description}</p>}
               {issues.map((issue: Issue, idx: number) => (
                 <div key={idx} className={`issue-card ${issue.isSystem ? 'system-issue' : ''}`}>
                   <div className="issue-header">
-                    <span className={`issue-severity ${issue.severity}`}>{SEVERITY_MAP[issue.severity]}</span>
+                    <span className={`issue-severity ${issue.severity === 'critical' ? 'high' : issue.severity}`}>{SEVERITY_MAP[issue.severity]}</span>
                     <span className="issue-section-tag">{issue.section}</span>
                     {issue.isSystem && <span className="system-badge">⚙️ 系統動態結構</span>}
-                    <span className="issue-deduction">
-                      {issue.isSystem ? '免扣分' : `-${issue.deduction}`}
-                    </span>
                   </div>
-                  {issue.isSystem && <div className="system-notice">⚠️ 此為系統框架產生，需由系統工程師優化。</div>}
+                  {issue.isSystem && <div className="system-notice">⚠️ 此為系統框架產生。</div>}
                   <p className="issue-message">{issue.message}</p>
                   <div className="issue-suggestion">💡 {issue.suggestion}</div>
-                  {issue.code && <pre className="issue-code">{issue.code}</pre>}
+                  {issue.type === 'empty-tag' && issue.details && Array.isArray(issue.details) ? (
+                    <div className="issue-details-grid" style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {issue.details.map((d: any, i: number) => (
+                        <div key={i} style={{ padding: '12px', background: 'var(--bg-body)', borderRadius: '6px', borderLeft: '3px solid var(--accent-yellow)' }}>
+                          <div style={{ color: 'var(--text-muted)', fontSize: '13px', marginBottom: '8px', lineHeight: '1.6' }}>
+                            <div style={{ fontWeight: 'bold' }}>尋找線索 (周遭環境)：</div>
+                            <div style={{ paddingLeft: '8px' }}>- 父級：{d.parentInfo || '未知'}</div>
+                            <div style={{ paddingLeft: '8px' }}>- 前方：{d.prevTag}</div>
+                            <div style={{ paddingLeft: '8px' }}>- 後方：{d.nextTag}</div>
+                          </div>
+                          <div style={{ background: '#2d1518', border: '1px solid var(--accent-red)', padding: '10px', borderRadius: '4px', color: '#ffb3b3' }}>
+                            <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '6px', color: 'var(--accent-red)', fontWeight: 'bold' }}>
+                              🚨 請在 Odoo 裡找到並刪除這段程式碼：
+                            </div>
+                            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '15px', color: '#fff' }}>{d.html}</pre>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (issue.code && <pre className="issue-code">{issue.code}</pre>)}
                 </div>
               ))}
             </div>
@@ -102,24 +126,111 @@ function App() {
     });
   };
 
-  const currentCircumference = 2 * Math.PI * 56;
-
   return (
     <div className="app-container">
        <header className="app-header"><div className="app-logo"><div className="app-logo-icon">🔍</div><h1 className="app-title">SEO 與樣式檢查工具 (智能偵測版)</h1></div></header>
-      <div className="input-section"><div className="input-group"><input type="url" className="url-input" placeholder="貼上網址..." value={url} onChange={e => setUrl(e.target.value)} /><button className="scan-btn secondary" onClick={handleDiscover} disabled={discovering || loading}>{discovering ? '偵測中...' : '📍 偵測網站區塊'}</button><button className="scan-btn" onClick={handleScan} disabled={loading || discovering}>{loading ? '稍候' : '開始掃描'}</button></div><div className="threshold-row">⚙️ Font-size 門檻：<input type="number" className="threshold-input" value={threshold} onChange={e => setThreshold(parseInt(e.target.value))} /> px</div></div>
+      <div className="input-section"><div className="input-group"><input type="url" className="url-input" placeholder="貼上網址..." value={url} onChange={e => setUrl(e.target.value)} /><button className="scan-btn secondary" onClick={handleDiscover} disabled={discovering || loading}>{discovering ? '偵測中...' : '📍 偵測網站區塊'}</button><button className="scan-btn" onClick={handleScan} disabled={loading || discovering}>{loading ? '稍候' : '開始掃描'}</button></div><div className="threshold-row">⚙️ Font-size 門檻：<input type="number" className="threshold-input" value={threshold} onChange={e => setThreshold(parseInt(e.target.value))} /> px &nbsp;&nbsp; 📑 最大掃描頁數：<input type="number" className="threshold-input" value={maxPages} onChange={e => setMaxPages(Math.min(500, Math.max(1, parseInt(e.target.value) || 60)))} style={{ width: '70px' }} /> 頁</div></div>
       <div className="mode-selector"><div className="mode-group-label">基本模式:</div><div className="mode-grid">{BASE_MODES.map(m => (<button key={m.key} className={`mode-btn ${mode === m.key ? 'active' : ''}`} onClick={() => setMode(m.key)}>{m.icon} {m.label}</button>))}</div>{discoveredModes.length > 0 && (<><div className="mode-group-label" style={{ marginTop: '15px', color: 'var(--accent-blue)' }}>✨ 智能發現區塊 (建議選取):</div><div className="mode-grid">{discoveredModes.map(m => (<button key={m.key} className={`mode-btn discovered ${m.key.startsWith('tree-') ? 'tree-mode' : ''} ${mode === m.key ? 'active' : ''}`} onClick={() => setMode(m.key)} title={`前綴: ${m.prefix}`}>{m.icon} {m.label}</button>))}</div></>)}</div>
       {loading && <div className="loading-section"><div className="spinner" /><p>正在抓取分頁進行診斷...</p></div>}
       {error && <div className="error-card">❌ {error}</div>}
       {crawlResult && (
         <div className="crawl-result-container">
-          <div className="score-section"><div className="score-header"><h3>批量掃描總結</h3><span>平均分數：<strong style={{ color: getScoreColor(crawlResult.summary.avgScore) }}>{crawlResult.summary.avgScore}</strong></span></div><div className="stats-grid">{Object.entries(crawlResult.summary.categoryCounts).map(([k, c]) => (<div key={k} className="stat-card"><div className="stat-count">{c}</div><div className="stat-label">{(BASE_MODES.find(m=>m.key===k as any) || {label:k}).label} 相關問題</div></div>))}</div></div>
-          <div className="pages-list"><h3 style={{ margin: '20px 0 10px' }}>成功掃描清單 ({crawlResult.pages.length} 頁)</h3>{crawlResult.pages.map((p, idx) => (<div key={idx} className="page-result-item"><div className="page-result-header" onClick={() => togglePage(idx)} style={{ cursor: 'pointer', background: 'var(--bg-card)', padding: '12px', borderRadius: '8px', marginBottom: '8px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '80%' }}><span style={{ color: getScoreColor(p.score), fontWeight: 'bold', marginRight: '10px' }}>{p.score}分</span><span style={{ fontSize: '12px', opacity: 0.8 }}>{p.url}</span></div><span>{expandedPages.has(idx) ? '收合詳情 ▲' : '查看詳情 ▼'}</span></div>{expandedPages.has(idx) && (<div className="page-result-detail" style={{ paddingLeft: '20px', marginBottom: '20px', borderLeft: '2px solid var(--accent-blue)' }}>{renderIssuesList(p.categories, 'all')}</div>)}</div>))}</div>
+          <div className="score-section"><div className="score-header"><h3>批量掃描總結</h3><span>總計問題分佈</span></div><div className="stats-grid">{Object.entries(crawlResult.summary.categoryCounts).map(([k, c]) => { const catLabels: Record<string, string> = { heading: '標題結構', seo: 'SEO 基礎', b2b: 'B2B 加強', style: '排版與多餘標籤', fontTag: '過時標籤' }; const label = catLabels[k] ? `${catLabels[k]}問題` : (BASE_MODES.find(m=>m.key===k as any)?.label || k); return (<div key={k} className="stat-card"><div className="stat-count">{c}</div><div className="stat-label">{label}</div></div>);})}</div></div>
+
+          {/* Header/Footer 共用問題獨立區塊 */}
+          {(crawlResult.commonIssues?.headerFooter?.issues?.length ?? 0) > 0 && (
+            <div className="common-issues-section" style={{ background: 'var(--bg-card)', border: '1px solid var(--accent-yellow)', borderRadius: '12px', padding: '20px', marginBottom: '24px' }}>
+              <h3 style={{ marginBottom: '16px', color: 'var(--accent-yellow)', display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }} onClick={() => toggleCategory('commonHF')}>
+                <span>🔒 Header / Footer 共用問題 ({crawlResult.commonIssues?.headerFooter?.issues?.length ?? 0} 個，僅顯示一次)</span>
+                <span>{collapsed.has('commonHF') ? '➕' : '➖'}</span>
+              </h3>
+              {!collapsed.has('commonHF') && (
+                <div className="issues-container">
+                  {crawlResult.commonIssues?.headerFooter?.issues?.map((issue: any, idx: number) => (
+                    <div key={idx} className={`issue-card ${issue.isSystem ? 'system-issue' : ''}`}>
+                      <div className="issue-header">
+                        <span className={`issue-severity ${issue.severity === 'critical' ? 'high' : issue.severity}`}>{SEVERITY_MAP[issue.severity]}</span>
+                        <span className="issue-section-tag">{issue.section}</span>
+                        {issue.category && <span style={{ fontSize: '11px', background: '#30363d', padding: '2px 6px', borderRadius: '4px', color: 'var(--text-muted)' }}>{issue.category}</span>}
+                        {issue.isSystem && <span className="system-badge">⚙️ 系統動態結構</span>}
+                      </div>
+                      {issue.isSystem && <div className="system-notice">⚠️ 此為系統框架產生。</div>}
+                      <p className="issue-message">{issue.message}</p>
+                      <div className="issue-suggestion">💡 {issue.suggestion}</div>
+                      {issue.type === 'empty-tag' && issue.details && Array.isArray(issue.details) ? (
+                        <div className="issue-details-grid" style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          {issue.details.map((d: any, i: number) => (
+                            <div key={i} style={{ padding: '12px', background: 'var(--bg-body)', borderRadius: '6px', borderLeft: '3px solid var(--accent-yellow)' }}>
+                              <div style={{ color: 'var(--text-muted)', fontSize: '13px', marginBottom: '8px', lineHeight: '1.6' }}>
+                                <div style={{ fontWeight: 'bold' }}>尋找線索 (周遭環境)：</div>
+                                <div style={{ paddingLeft: '8px' }}>- 父級：{d.parentInfo || '未知'}</div>
+                                <div style={{ paddingLeft: '8px' }}>- 前方：{d.prevTag}</div>
+                                <div style={{ paddingLeft: '8px' }}>- 後方：{d.nextTag}</div>
+                              </div>
+                              <div style={{ background: '#2d1518', border: '1px solid var(--accent-red)', padding: '10px', borderRadius: '4px', color: '#ffb3b3' }}>
+                                <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '6px', color: 'var(--accent-red)', fontWeight: 'bold' }}>
+                                  🚨 請在 Odoo 裡找到並刪除這段程式碼：
+                                </div>
+                                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '15px', color: '#fff' }}>{d.html}</pre>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (issue.code && <pre className="issue-code">{issue.code}</pre>)}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 分頁控制 */}
+          <div className="pages-list">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '20px 0 10px', flexWrap: 'wrap', gap: '8px' }}>
+              <h3>頁面掃描結果 ({crawlResult.pages.length} 頁)</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
+                每頁顯示：<input type="number" className="threshold-input" value={perPage} onChange={e => { setPerPage(Math.max(1, parseInt(e.target.value) || 10)); setCurrentPage(0); }} style={{ width: '80px', fontSize: '16px', padding: '6px 8px' }} /> 筆
+              </div>
+            </div>
+            {/* 分頁按鈕 */}
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <button className="filter-chip" disabled={currentPage === 0} onClick={() => setCurrentPage(p => p - 1)}>◀ 上一頁</button>
+                <span style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '0 8px' }}>第 {currentPage + 1} / {totalPages} 頁</span>
+                <button className="filter-chip" disabled={currentPage >= totalPages - 1} onClick={() => setCurrentPage(p => p + 1)}>下一頁 ▶</button>
+              </div>
+            )}
+            {paginatedPages.map((p: any, localIdx: number) => {
+              const globalIdx = currentPage * perPage + localIdx;
+              const isCritical = p.hasCritical;
+              return (
+                <div key={globalIdx} className="page-result-item">
+                  <div className="page-result-header" onClick={() => togglePage(globalIdx)} style={{ 
+                    cursor: 'pointer', background: isCritical ? '#2d1518' : 'var(--bg-card)', padding: '12px', borderRadius: '8px', marginBottom: '8px', 
+                    border: isCritical ? '2px solid var(--accent-red)' : '1px solid var(--border-color)', 
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center' 
+                  }}>
+                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '75%' }}>
+                      <span style={{ color: isCritical ? 'var(--accent-red)' : 'var(--accent-blue)', fontWeight: 'bold', marginRight: '10px' }}>
+                        {isCritical ? '🚨 ' : '⚠️ '}{p.totalIssues} 個問題
+                      </span>
+                      {p.emptyTagCount > 0 && <span style={{ fontSize: '11px', background: 'var(--accent-yellow)', color: '#000', padding: '2px 6px', borderRadius: '4px', marginRight: '8px', fontWeight: 'bold' }}>⚠ {p.emptyTagCount} 個空白</span>}
+                      <span style={{ fontSize: '12px', opacity: 0.8 }}>{p.url}</span>
+                    </div>
+                    <span>{expandedPages.has(globalIdx) ? '收合詳情 ▲' : '查看詳情 ▼'}</span>
+                  </div>
+                  {expandedPages.has(globalIdx) && (
+                    <div className="page-result-detail" style={{ paddingLeft: '20px', marginBottom: '20px', borderLeft: `2px solid ${isCritical ? 'var(--accent-red)' : 'var(--accent-blue)'}` }}>{renderIssuesList(p.categories, 'all')}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
       {singleResult && (
         <>
-          <div className="score-section"><div className="score-card"><div className="score-gauge"><svg width="140" height="140"><circle className="score-gauge-bg" cx="70" cy="70" r="56" /><circle className="score-gauge-fill" cx="70" cy="70" r="56" stroke={getScoreColor(singleResult.score)} strokeDasharray={currentCircumference} strokeDashoffset={currentCircumference - (singleResult.score / 100) * currentCircumference} /></svg><span className="score-value" style={{ color: getScoreColor(singleResult.score) }}>{singleResult.score}</span></div></div>
+          <div className="score-section">
             <div className="stats-grid">{getSortedCats(singleResult.categories).map(([k, cat]: any) => (<div key={k} className="stat-card" style={{ borderLeft: k==='heading' ? '4px solid var(--accent-blue)' : '' }} onClick={() => toggleCategory(k)}><div className="stat-count">{cat.count}</div><div className="stat-label">{cat.label}</div></div>))}</div>
           </div>
           <div className="section-filter">{['all', 'Header', 'Content', 'Footer', 'Head'].map(s => <button key={s} className={`filter-chip ${sectionFilter === s ? 'active' : ''}`} onClick={() => setSectionFilter(s)}>{s}</button>)}</div>

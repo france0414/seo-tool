@@ -65,18 +65,6 @@ body {
 .mode-btn.discovered { border-style: dashed; border-color: var(--accent-blue); }
 
 .score-section { display: flex; gap: 24px; margin-bottom: 32px; align-items: center; }
-.score-card { background: var(--bg-card); padding: 32px; border-radius: 16px; border: 1px solid var(--border-color); display: flex; justify-content: center; align-items: center; }
-.score-gauge { position: relative; width: 140px; height: 140px; }
-.score-gauge-bg { fill: none; stroke: #30363d; stroke-width: 8; }
-.score-gauge-fill {
-  fill: none; stroke-width: 8; stroke-linecap: round;
-  transition: stroke-dashoffset 0.8s ease-out;
-}
-.score-value {
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  font-size: 32px; font-weight: 800;
-}
-
 .stats-grid { flex: 1; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
 .stat-card {
   background: var(--bg-card); padding: 20px; border-radius: 12px; border: 1px solid var(--border-color);
@@ -111,7 +99,6 @@ body {
 .issue-severity.low { background: rgba(58, 185, 80, 0.1); color: var(--accent-green); }
 
 .issue-section-tag { background: #30363d; font-size: 11px; padding: 2px 8px; border-radius: 4px; color: var(--text-muted); }
-.issue-deduction { margin-left: auto; color: var(--accent-red); font-weight: 600; font-size: 14px; }
 
 .system-badge { background: var(--accent-yellow); color: #0d1117; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; }
 .system-notice { font-size: 12px; color: var(--accent-yellow); margin-bottom: 8px; font-weight: 600; }
