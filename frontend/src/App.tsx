@@ -26,6 +26,8 @@ function App() {
   const [expandedPages, setExpandedPages] = useState<Set<number>>(new Set());
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(0);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadStatus, setDownloadStatus] = useState('');
 
   // 分頁計算
   const totalPages = crawlResult ? Math.ceil(crawlResult.pages.length / perPage) : 0;
@@ -66,6 +68,58 @@ function App() {
       if (mode === 'single' && !isCustomLink) setSingleResult(data); else setCrawlResult(data);
     } catch (err: any) { setError(err.message); }
     finally { setLoading(false); }
+  };
+
+  const handleDownloadAllImages = async () => {
+    if (!crawlResult || downloading) return;
+    setDownloading(true);
+    setDownloadStatus('準備下載中...');
+    try {
+      // 從所有頁面中過濾出產品圖片資料
+      const productsToDownload = crawlResult.pages
+        .filter((p: any) => p.productImages && p.productImages.length > 0)
+        .map((p: any) => {
+          // 取得網址的最後一段作為唯一識別 (例如 charger-station-151)
+          const segments = p.url.split('/').filter(Boolean);
+          const urlId = segments[segments.length - 1] || 'product';
+          
+          // 取得產品名稱，優先使用第一張圖的 alt
+          const altName = p.productImages[0]?.alt?.replace(/[\/\\?%*:|"<>]/g, '-').trim();
+          
+          // 組合名稱：若有 alt 則使用 "Alt_URLID"，否則只用 URLID，確保資料夾不重複
+          const uniqueName = (altName && altName !== 'product_image') 
+            ? `${altName}_${urlId}` 
+            : urlId;
+          
+          return {
+            name: uniqueName,
+            urls: p.productImages.map((img: any) => img.highRes || img.standardRes).filter(Boolean)
+          };
+        })
+        .filter(p => p.urls.length > 0);
+
+      if (productsToDownload.length === 0) {
+        alert('未偵測到任何含有產品輪播圖的頁面。');
+        return;
+      }
+
+      setDownloadStatus(`正在下載 ${productsToDownload.length} 個產品...`);
+      const res = await fetch('/api/download-images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ products: productsToDownload })
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      
+      alert(`✅ 下載完成！\n共處理了 ${data.results.length} 個產品。\n檔案已存放在專案下的 downloads/ 資料夾。`);
+    } catch (err: any) {
+      alert(`下載失敗: ${err.message}`);
+    } finally {
+      setDownloading(false);
+      setDownloadStatus('');
+    }
   };
 
   const toggleCategory = (key: string) => setCollapsed(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
@@ -187,7 +241,17 @@ function App() {
           {/* 分頁控制 */}
           <div className="pages-list">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '20px 0 10px', flexWrap: 'wrap', gap: '8px' }}>
-              <h3>頁面掃描結果 ({crawlResult.pages.length} 頁)</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                <h3 style={{ margin: 0 }}>頁面掃描結果 ({crawlResult.pages.length} 頁)</h3>
+                <button 
+                  className={`scan-btn ${downloading ? 'loading' : ''}`}
+                  style={{ padding: '8px 16px', fontSize: '14px', background: 'var(--accent-yellow)', color: '#000' }}
+                  onClick={handleDownloadAllImages}
+                  disabled={downloading}
+                >
+                  {downloading ? `📥 ${downloadStatus}` : '📦 一鍵下載所有產品圖片'}
+                </button>
+              </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
                 每頁顯示：<input type="number" className="threshold-input" value={perPage} onChange={e => { setPerPage(Math.max(1, parseInt(e.target.value) || 10)); setCurrentPage(0); }} style={{ width: '80px', fontSize: '16px', padding: '6px 8px' }} /> 筆
               </div>

@@ -5,9 +5,10 @@ const cheerio = require('cheerio');
 const path = require('path');
 const fs = require('fs');
 const { analyzeHTML, extractLinks, discoverStructure } = require('./lib/audit');
+const sharp = require('sharp');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
@@ -200,6 +201,71 @@ app.get('*', (req, res) => {
   } else {
     // 萬一還是找不到，列出搜尋路徑給環境除錯用
     res.status(404).send(`前端檔案定位失敗。<br>嘗試過的路徑：<pre>${distCandidates.join('\n')}</pre>`);
+  }
+});
+
+/**
+ * [New] 圖片批次下載功能
+ */
+async function downloadFile(url, folderPath, fileName) {
+  if (!fs.existsSync(folderPath)) fs.mkdirSync(folderPath, { recursive: true });
+  const localFilePath = path.join(folderPath, fileName);
+  
+  const response = await axios({
+    url,
+    method: 'GET',
+    responseType: 'arraybuffer', // 改用 arraybuffer 以便 sharp 處理
+    timeout: 30000
+  });
+
+  // 使用 sharp 轉為 PNG 並保留透明度 (Alpha 通道)
+  await sharp(response.data)
+    .png()
+    .toFile(localFilePath);
+
+  return Promise.resolve();
+}
+
+app.post('/api/download-images', async (req, res) => {
+  try {
+    const { products } = req.body; // Array of { name, urls: [] }
+    if (!products || !Array.isArray(products)) {
+      return res.status(400).json({ error: '請提供產品資料清單' });
+    }
+
+    const baseDownloadDir = path.join(process.cwd(), 'downloads');
+    if (!fs.existsSync(baseDownloadDir)) fs.mkdirSync(baseDownloadDir);
+
+    const results = [];
+    console.log(`📥 開始下載 ${products.length} 個產品的圖片...`);
+
+    for (const prod of products) {
+      const { name, urls } = prod;
+      const safeName = (name || 'unnamed-product').replace(/[\/\\?%*:|"<>]/g, '-').trim();
+      const prodDir = path.join(baseDownloadDir, safeName);
+      
+      const prodResults = [];
+      for (let i = 0; i < urls.length; i++) {
+        const url = urls[i];
+        try {
+          // 強制使用 .png 副檔名
+          const fileName = `${safeName}_${i + 1}.png`;
+          
+          await downloadFile(url, prodDir, fileName);
+          prodResults.push({ url, success: true, fileName });
+          // 下載間隔，避免被鎖
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (err) {
+          console.error(`❌ 下載失敗 [${url}]:`, err.message);
+          prodResults.push({ url, success: false, error: err.message });
+        }
+      }
+      results.push({ product: name, details: prodResults });
+    }
+
+    res.json({ success: true, message: '下載任務完成', results, downloadPath: baseDownloadDir });
+  } catch (err) {
+    res.status(500).json({ error: `下載過程發生錯誤: ${err.message}` });
   }
 });
 
