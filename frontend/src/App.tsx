@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { ScanResult, CrawlResult, ScanMode, Issue, DiscoveredMode } from './types';
 
 const BASE_MODES: { key: ScanMode; icon: string; label: string; desc: string }[] = [
@@ -28,6 +28,14 @@ function App() {
   const [currentPage, setCurrentPage] = useState(0);
   const [downloading, setDownloading] = useState(false);
   const [downloadStatus, setDownloadStatus] = useState('');
+  const [serverConfig, setServerConfig] = useState({ isVercel: false, downloadEnabled: true });
+
+  useEffect(() => {
+    fetch('/api/config')
+      .then(res => res.json())
+      .then(data => setServerConfig(data))
+      .catch(err => console.error('無法取得伺服器設定:', err));
+  }, []);
 
   // 分頁計算
   const totalPages = crawlResult ? Math.ceil(crawlResult.pages.length / perPage) : 0;
@@ -243,14 +251,16 @@ function App() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '20px 0 10px', flexWrap: 'wrap', gap: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                 <h3 style={{ margin: 0 }}>頁面掃描結果 ({crawlResult.pages.length} 頁)</h3>
-                <button 
-                  className={`scan-btn ${downloading ? 'loading' : ''}`}
-                  style={{ padding: '8px 16px', fontSize: '14px', background: 'var(--accent-yellow)', color: '#000' }}
-                  onClick={handleDownloadAllImages}
-                  disabled={downloading}
-                >
-                  {downloading ? `📥 ${downloadStatus}` : '📦 一鍵下載所有產品圖片'}
-                </button>
+                {serverConfig.downloadEnabled && (
+                  <button 
+                    className={`scan-btn ${downloading ? 'loading' : ''}`}
+                    style={{ padding: '8px 16px', fontSize: '14px', background: 'var(--accent-yellow)', color: '#000' }}
+                    onClick={handleDownloadAllImages}
+                    disabled={downloading}
+                  >
+                    {downloading ? `📥 ${downloadStatus}` : '📦 一鍵下載所有產品圖片'}
+                  </button>
+                )}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
                 每頁顯示：<input type="number" className="threshold-input" value={perPage} onChange={e => { setPerPage(Math.max(1, parseInt(e.target.value) || 10)); setCurrentPage(0); }} style={{ width: '80px', fontSize: '16px', padding: '6px 8px' }} /> 筆

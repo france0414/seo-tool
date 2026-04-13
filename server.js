@@ -226,7 +226,21 @@ async function downloadFile(url, folderPath, fileName) {
   return Promise.resolve();
 }
 
+// [New] 分辨目前的環境與功能開關
+const IS_VERCEL = !!process.env.VERCEL;
+
+app.get('/api/config', (req, res) => {
+  res.json({
+    isVercel: IS_VERCEL,
+    downloadEnabled: !IS_VERCEL
+  });
+});
+
 app.post('/api/download-images', async (req, res) => {
+  // 如果在 Vercel 環境，禁用下載功能
+  if (IS_VERCEL) {
+    return res.status(403).json({ error: '雲端版不支援直接下載到本地，請在本地執行本程式。' });
+  }
   try {
     const { products } = req.body; // Array of { name, urls: [] }
     if (!products || !Array.isArray(products)) {
