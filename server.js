@@ -73,9 +73,9 @@ app.post('/api/scan', async (req, res) => {
 
 app.post('/api/crawl', async (req, res) => {
   try {
-    const { url, mode = 'all', customPrefix, fontSizeThreshold = 18, maxPages = 1000 } = req.body;
+    const { url, mode = 'all', customPrefix, fontSizeThreshold = 18, maxPages = 300 } = req.body;
     if (!url) return res.status(400).json({ error: '請提供網址' });
-    const pageLimit = Math.min(1000, Math.max(1, maxPages)); // 上限 1000 頁
+    const pageLimit = Math.min(300, Math.max(1, maxPages)); // 上限 300 頁
 
     const origin = new URL(url).origin;
     const allLinks = new Set();

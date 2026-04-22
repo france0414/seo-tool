@@ -13,7 +13,7 @@ function App() {
   const [url, setUrl] = useState('');
   const [mode, setMode] = useState<ScanMode>('single');
   const [threshold, setThreshold] = useState(18);
-  const [maxPages, setMaxPages] = useState(1000);
+  const [maxPages, setMaxPages] = useState(300);
   const [loading, setLoading] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [discoveredModes, setDiscoveredModes] = useState<DiscoveredMode[]>([]);
@@ -191,7 +191,7 @@ function App() {
   return (
     <div className="app-container">
        <header className="app-header"><div className="app-logo"><div className="app-logo-icon">🔍</div><h1 className="app-title">SEO 與樣式檢查工具 (智能偵測版)</h1></div></header>
-      <div className="input-section"><div className="input-group"><input type="url" className="url-input" placeholder="貼上網址..." value={url} onChange={e => setUrl(e.target.value)} /><button className="scan-btn secondary" onClick={handleDiscover} disabled={discovering || loading}>{discovering ? '偵測中...' : '📍 偵測網站區塊'}</button><button className="scan-btn" onClick={handleScan} disabled={loading || discovering}>{loading ? '稍候' : '開始掃描'}</button></div><div className="threshold-row">⚙️ Font-size 門檻：<input type="number" className="threshold-input" value={threshold} onChange={e => setThreshold(parseInt(e.target.value))} /> px &nbsp;&nbsp; 📑 最大掃描頁數：<input type="number" className="threshold-input" value={maxPages} onChange={e => setMaxPages(Math.min(1000, Math.max(1, parseInt(e.target.value) || 60)))} style={{ width: '70px' }} /> 頁</div></div>
+      <div className="input-section"><div className="input-group"><input type="url" className="url-input" placeholder="貼上網址..." value={url} onChange={e => setUrl(e.target.value)} /><button className="scan-btn secondary" onClick={handleDiscover} disabled={discovering || loading}>{discovering ? '偵測中...' : '📍 偵測網站區塊'}</button><button className="scan-btn" onClick={handleScan} disabled={loading || discovering}>{loading ? '稍候' : '開始掃描'}</button></div><div className="threshold-row">⚙️ Font-size 門檻：<input type="number" className="threshold-input" value={threshold} onChange={e => setThreshold(parseInt(e.target.value))} /> px &nbsp;&nbsp; 📑 最大掃描頁數：<input type="number" className="threshold-input" value={maxPages} onChange={e => setMaxPages(Math.min(300, Math.max(1, parseInt(e.target.value) || 60)))} style={{ width: '70px' }} /> 頁</div></div>
       <div className="mode-selector"><div className="mode-group-label">基本模式:</div><div className="mode-grid">{BASE_MODES.map(m => (<button key={m.key} className={`mode-btn ${mode === m.key ? 'active' : ''}`} onClick={() => setMode(m.key)}>{m.icon} {m.label}</button>))}</div>{discoveredModes.length > 0 && (<><div className="mode-group-label" style={{ marginTop: '15px', color: 'var(--accent-blue)' }}>✨ 智能發現區塊 (建議選取):</div><div className="mode-grid">{discoveredModes.map(m => (<button key={m.key} className={`mode-btn discovered ${m.key.startsWith('tree-') ? 'tree-mode' : ''} ${mode === m.key ? 'active' : ''}`} onClick={() => setMode(m.key)} title={`前綴: ${m.prefix}`}>{m.icon} {m.label}</button>))}</div></>)}</div>
       {loading && <div className="loading-section"><div className="spinner" /><p>正在抓取分頁進行診斷...</p></div>}
       {error && <div className="error-card">❌ {error}</div>}
