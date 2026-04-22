@@ -3,7 +3,6 @@ dist
 .env
 .DS_Store
 frontend/node_modules
-frontend/dist
 downloads/
 scratch/
 .vercel
